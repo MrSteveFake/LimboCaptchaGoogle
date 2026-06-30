@@ -19,50 +19,90 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
     
+    - name: Show file structure
+      run: |
+        echo "=== КОРЕНЬ РЕПОЗИТОРИЯ ==="
+        ls -la
+        echo ""
+        echo "=== ВСЕ ПАПКИ ==="
+        find . -type d | head -20
+        echo ""
+        echo "=== ВСЕ JAVA ФАЙЛЫ ==="
+        find . -name "*.java" | head -20
+        echo ""
+        echo "=== ВСЕ JSON/YML ФАЙЛЫ ==="
+        find . -name "*.json" -o -name "*.yml" | head -20
+    
+    - name: Fix folder structure
+      run: |
+        # Если файлы в подпапке - переместить в корень
+        if [ -d "LimboCaptcha" ]; then
+          echo "Найдена вложенная папка LimboCaptcha, исправляю..."
+          cp -r LimboCaptcha/* .
+          rm -rf LimboCaptcha
+        fi
+        
+        # Показать финальную структуру
+        echo "=== ИТОГОВАЯ СТРУКТУРА ==="
+        find . -name "*.java" -o -name "*.json" -o -name "*.yml" | grep -v ".github" | sort
+    
     - name: Create directories
       run: |
         mkdir -p libs
         mkdir -p build/classes
-        mkdir -p build/merged
     
     - name: Download dependencies
       run: |
-        wget -q -O libs/velocity-api.jar https://repo.papermc.io/repository/maven-public/com/velocitypowered/velocity-api/3.4.0/velocity-api-3.4.0.jar
-        wget -q -O libs/adventure-api.jar https://repo1.maven.org/maven2/net/kyori/adventure-api/4.16.0/adventure-api-4.16.0.jar
-        wget -q -O libs/adventure-text-serializer-legacy.jar https://repo1.maven.org/maven2/net/kyori/adventure-text-serializer-legacy/4.16.0/adventure-text-serializer-legacy-4.16.0.jar
-        wget -q -O libs/slf4j-api.jar https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar
+        echo "Скачивание библиотек..."
+        wget -q -O libs/velocity-api.jar https://repo.papermc.io/repository/maven-public/com/velocitypowered/velocity-api/3.4.0/velocity-api-3.4.0.jar && echo "✓ Velocity API"
+        wget -q -O libs/adventure-api.jar https://repo1.maven.org/maven2/net/kyori/adventure-api/4.16.0/adventure-api-4.16.0.jar && echo "✓ Adventure API"
+        wget -q -O libs/adventure-legacy.jar https://repo1.maven.org/maven2/net/kyori/adventure-text-serializer-legacy/4.16.0/adventure-text-serializer-legacy-4.16.0.jar && echo "✓ Adventure Legacy"
+        wget -q -O libs/slf4j-api.jar https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar && echo "✓ SLF4J"
+        ls -la libs/
     
-    - name: Compile Java
+    - name: Find Java files
       run: |
-        find . -name "*.java" -path "*/src/*" > sources.txt
+        # Ищем Java файлы в любом месте
+        find . -name "*.java" -type f > sources.txt
+        echo "Найдено файлов: $(wc -l < sources.txt)"
+        cat sources.txt
+    
+    - name: Compile
+      run: |
+        echo "Компиляция..."
         CLASSPATH=""
         for jar in libs/*.jar; do
           CLASSPATH="$CLASSPATH:$jar"
         done
         javac -d build/classes -cp "${CLASSPATH#:}" @sources.txt
-        rm sources.txt
+        echo "✓ Компиляция завершена"
+    
+    - name: Find resources
+      run: |
+        # Ищем resources где угодно
+        echo "Поиск ресурсов..."
+        find . -name "velocity-plugin.json" -o -name "config.yml" | grep -v ".github"
     
     - name: Copy resources
       run: |
-        cp -r resources/* build/classes/ 2>/dev/null || echo "Resources copied"
+        echo "Копирование ресурсов..."
+        # Копируем из всех возможных мест
+        for dir in $(find . -type d -name "resources"); do
+          echo "Найдена папка: $dir"
+          cp -r $dir/* build/classes/ 2>/dev/null && echo "✓ Ресурсы скопированы из $dir"
+        done
+        
+        # Проверка
+        echo "Содержимое build/classes:"
+        ls -la build/classes/
     
     - name: Create JAR
       run: |
-        cd build/merged
-        for jar in ../../libs/*.jar; do
-          jar xf "$jar"
-        done
-        cd ../..
         cd build/classes
-        jar cf ../temp.jar *
-        cd ../..
-        cd build/merged
-        jar xf ../temp.jar
-        rm -rf META-INF
-        rm -f module-info.class
         jar cf ../LimboCaptcha.jar *
         cd ../..
-        rm -rf build/classes build/merged build/temp.jar
+        echo "✓ JAR создан"
+        ls -lh build/LimboCaptcha.jar
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
