@@ -19,89 +19,83 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
     
-    - name: Show file structure
+    - name: Debug - Show ALL files
       run: |
-        echo "=== КОРЕНЬ РЕПОЗИТОРИЯ ==="
+        echo "=== ПОЛНОЕ ДЕРЕВО ФАЙЛОВ ==="
+        find . -type f | sort
+        echo ""
+        echo "=== СОДЕРЖИМОЕ КОРНЯ ==="
         ls -la
-        echo ""
-        echo "=== ВСЕ ПАПКИ ==="
-        find . -type d | head -20
-        echo ""
-        echo "=== ВСЕ JAVA ФАЙЛЫ ==="
-        find . -name "*.java" | head -20
-        echo ""
-        echo "=== ВСЕ JSON/YML ФАЙЛЫ ==="
-        find . -name "*.json" -o -name "*.yml" | head -20
-    
-    - name: Fix folder structure
-      run: |
-        # Если файлы в подпапке - переместить в корень
-        if [ -d "LimboCaptcha" ]; then
-          echo "Найдена вложенная папка LimboCaptcha, исправляю..."
-          cp -r LimboCaptcha/* .
-          rm -rf LimboCaptcha
-        fi
-        
-        # Показать финальную структуру
-        echo "=== ИТОГОВАЯ СТРУКТУРА ==="
-        find . -name "*.java" -o -name "*.json" -o -name "*.yml" | grep -v ".github" | sort
     
     - name: Create directories
       run: |
         mkdir -p libs
-        mkdir -p build/classes
+        mkdir -p build
     
     - name: Download dependencies
       run: |
-        echo "Скачивание библиотек..."
-        wget -q -O libs/velocity-api.jar https://repo.papermc.io/repository/maven-public/com/velocitypowered/velocity-api/3.4.0/velocity-api-3.4.0.jar && echo "✓ Velocity API"
-        wget -q -O libs/adventure-api.jar https://repo1.maven.org/maven2/net/kyori/adventure-api/4.16.0/adventure-api-4.16.0.jar && echo "✓ Adventure API"
-        wget -q -O libs/adventure-legacy.jar https://repo1.maven.org/maven2/net/kyori/adventure-text-serializer-legacy/4.16.0/adventure-text-serializer-legacy-4.16.0.jar && echo "✓ Adventure Legacy"
-        wget -q -O libs/slf4j-api.jar https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar && echo "✓ SLF4J"
+        wget -q -O libs/velocity-api.jar https://repo.papermc.io/repository/maven-public/com/velocitypowered/velocity-api/3.4.0/velocity-api-3.4.0.jar
+        wget -q -O libs/adventure-api.jar https://repo1.maven.org/maven2/net/kyori/adventure-api/4.16.0/adventure-api-4.16.0.jar
+        wget -q -O libs/adventure-legacy.jar https://repo1.maven.org/maven2/net/kyori/adventure-text-serializer-legacy/4.16.0/adventure-text-serializer-legacy-4.16.0.jar
+        wget -q -O libs/slf4j-api.jar https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar
+        echo "Библиотеки скачаны:"
         ls -la libs/
     
-    - name: Find Java files
+    - name: Manual compile
       run: |
-        # Ищем Java файлы в любом месте
-        find . -name "*.java" -type f > sources.txt
-        echo "Найдено файлов: $(wc -l < sources.txt)"
-        cat sources.txt
-    
-    - name: Compile
-      run: |
+        echo "Поиск Java файлов..."
+        JAVA_FILES=$(find . -name "*.java" -type f)
+        echo "$JAVA_FILES"
+        
+        if [ -z "$JAVA_FILES" ]; then
+          echo "ОШИБКА: Java файлы не найдены!"
+          echo "Проверьте что файлы загружены в репозиторий"
+          exit 1
+        fi
+        
+        echo ""
         echo "Компиляция..."
-        CLASSPATH=""
+        # Собираем classpath
+        CP=""
         for jar in libs/*.jar; do
-          CLASSPATH="$CLASSPATH:$jar"
-        done
-        javac -d build/classes -cp "${CLASSPATH#:}" @sources.txt
-        echo "✓ Компиляция завершена"
-    
-    - name: Find resources
-      run: |
-        # Ищем resources где угодно
-        echo "Поиск ресурсов..."
-        find . -name "velocity-plugin.json" -o -name "config.yml" | grep -v ".github"
-    
-    - name: Copy resources
-      run: |
-        echo "Копирование ресурсов..."
-        # Копируем из всех возможных мест
-        for dir in $(find . -type d -name "resources"); do
-          echo "Найдена папка: $dir"
-          cp -r $dir/* build/classes/ 2>/dev/null && echo "✓ Ресурсы скопированы из $dir"
+          CP="$CP:$jar"
         done
         
-        # Проверка
-        echo "Содержимое build/classes:"
-        ls -la build/classes/
+        # Компилируем каждый файл отдельно
+        for file in $JAVA_FILES; do
+          echo "  Компиляция: $file"
+          javac -d build -cp "${CP#:}" "$file"
+        done
+        
+        echo "Компиляция завершена!"
+    
+    - name: Find and copy resources
+      run: |
+        echo "Поиск plugin.json..."
+        find . -name "velocity-plugin.json" -type f
+        
+        echo "Поиск config.yml..."
+        find . -name "config.yml" -type f
+        
+        # Копируем plugin.json
+        PLUGIN_JSON=$(find . -name "velocity-plugin.json" -type f | head -1)
+        if [ -n "$PLUGIN_JSON" ]; then
+          cp "$PLUGIN_JSON" build/
+          echo "Скопирован: $PLUGIN_JSON"
+        fi
+        
+        # Копируем config.yml
+        CONFIG_YML=$(find . -name "config.yml" -type f | head -1)
+        if [ -n "$CONFIG_YML" ]; then
+          cp "$CONFIG_YML" build/
+          echo "Скопирован: $CONFIG_YML"
+        fi
     
     - name: Create JAR
       run: |
-        cd build/classes
-        jar cf ../LimboCaptcha.jar *
-        cd ../..
-        echo "✓ JAR создан"
+        cd build
+        jar cf LimboCaptcha.jar *
+        cd ..
         ls -lh build/LimboCaptcha.jar
     
     - name: Upload artifact
